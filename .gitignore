@@ -1,0 +1,32 @@
+# Xcode
+*.xcodeproj
+!project.yml
+xcuserdata/
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# ML model weights are never committed (packaged via GitHub Actions release assets)
+*.mlmodel
+*.mlmodelc
+*.mlpackage
+*.onnx
+SimilitudeCartoonizationModel.zip
+
+# Signing material
+*.mobileprovision
+*.p12
+*.cer
+
+# macOS
+.DS_Store
+
+# CI artifacts
+fastlane/report.xml
+fastlane/test_output

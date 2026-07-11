@@ -1,0 +1,167 @@
+name: iOS Build & TestFlight
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Upload to TestFlight"
+        type: boolean
+        default: false
+
+env:
+  XCODE_VERSION: "16.2"
+  SCHEME: Similitude
+
+jobs:
+  build-and-test:
+    name: Build & Test (Simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project Similitude.xcodeproj -scheme "$SCHEME"
+
+      - name: Build (simulator, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Similitude.xcodeproj \
+            -scheme "$SCHEME" \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | xcbeautify --renderer github-actions || (tail -100 build.log; exit 1)
+
+      - name: Test (iPhone simulator)
+        run: |
+          set -o pipefail
+          UDID=$(xcrun simctl list devices available --json \
+            | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(dev['udid'] for devs in d.values() for dev in devs if dev['name'].startswith('iPhone')))")
+          xcodebuild test \
+            -project Similitude.xcodeproj \
+            -scheme "$SCHEME" \
+            -destination "id=$UDID" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee test.log | xcbeautify --renderer github-actions || (tail -100 test.log; exit 1)
+
+      - name: Preserve build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build.log
+            test.log
+          if-no-files-found: ignore
+
+  testflight:
+    name: Archive & Upload to TestFlight
+    # Runs on main pushes and manual dispatch with deploy=true.
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    needs: build-and-test
+    runs-on: macos-15
+    environment: testflight
+    env:
+      DIST_CERT_PRESENT: ${{ secrets.DIST_CERT_P12_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p ~/asc
+          printf '%s' "$ASC_KEY_P8" > ~/asc/AuthKey.p8
+
+      - name: Import distribution certificate (optional)
+        if: ${{ env.DIST_CERT_PRESENT == 'true' }}
+        env:
+          DIST_CERT_P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+        run: |
+          echo "$DIST_CERT_P12_BASE64" | base64 --decode > cert.p12
+          security create-keychain -p ci-temp build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci-temp build.keychain
+          security import cert.p12 -k build.keychain -P "$DIST_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci-temp build.keychain
+          rm cert.p12
+
+      - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project Similitude.xcodeproj \
+            -scheme "$SCHEME" \
+            -destination "generic/platform=iOS" \
+            -archivePath build/Similitude.xcarchive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/asc/AuthKey.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            | tee archive.log | xcbeautify --renderer github-actions || (tail -100 archive.log; exit 1)
+
+      - name: Export & upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath build/Similitude.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/asc/AuthKey.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            | tee export.log | xcbeautify --renderer github-actions || (tail -100 export.log; exit 1)
+
+      - name: Preserve archive logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-logs
+          path: |
+            archive.log
+            export.log
+          if-no-files-found: ignore
