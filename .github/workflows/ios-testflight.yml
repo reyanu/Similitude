@@ -11,8 +11,10 @@ on:
         type: boolean
         default: false
 
+# The runner's default Xcode is used deliberately: only the default Xcode on
+# the macOS image has iOS simulator runtimes preinstalled, and pinning another
+# version leaves tests with no eligible simulator destination.
 env:
-  XCODE_VERSION: "16.2"
   SCHEME: Similitude
 
 jobs:
@@ -22,8 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -89,8 +91,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
