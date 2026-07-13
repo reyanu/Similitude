@@ -47,17 +47,26 @@ jobs:
       - name: Test (iPhone simulator)
         run: |
           set -o pipefail
-          UDID=$(xcrun simctl list devices available --json \
-            | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(dev['udid'] for devs in d.values() for dev in devs if dev['name'].startswith('iPhone')))")
+          # Ask xcodebuild for a destination it can actually use — simctl
+          # lists simulators from every Xcode on the runner image, including
+          # runtimes the selected Xcode cannot run.
+          DEST_ID=$(xcodebuild -showdestinations -project Similitude.xcodeproj -scheme "$SCHEME" 2>/dev/null \
+            | grep "platform:iOS Simulator" | grep -v "error:" | grep -o "id:[0-9A-F-]*" | head -1 | cut -d: -f2)
+          if [ -z "$DEST_ID" ]; then
+            echo "No eligible iOS Simulator destination found"; exit 1
+          fi
+          echo "Using simulator destination: $DEST_ID"
           xcodebuild test \
             -project Similitude.xcodeproj \
             -scheme "$SCHEME" \
-            -destination "id=$UDID" \
+            -destination "id=$DEST_ID" \
             CODE_SIGNING_ALLOWED=NO \
             | tee test.log | xcbeautify --renderer github-actions || (tail -100 test.log; exit 1)
 
       - name: Preserve build logs
         if: always()
+        # Log upload is best-effort; account storage quota must not fail CI.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
@@ -158,6 +167,7 @@ jobs:
 
       - name: Preserve archive logs
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: archive-logs
