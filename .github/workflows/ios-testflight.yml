@@ -49,11 +49,21 @@ jobs:
       - name: Test (iPhone simulator)
         run: |
           set -o pipefail
-          # Ask xcodebuild for a destination it can actually use — simctl
-          # lists simulators from every Xcode on the runner image, including
-          # runtimes the selected Xcode cannot run.
-          DEST_ID=$(xcodebuild -showdestinations -project Similitude.xcodeproj -scheme "$SCHEME" 2>/dev/null \
-            | grep "platform:iOS Simulator" | grep -v "error:" | grep -o "id:[0-9A-F-]*" | head -1 | cut -d: -f2)
+          echo "=== Installed simulator runtimes ==="
+          xcrun simctl list runtimes || true
+          echo "=== Available iPhone simulators ==="
+          xcrun simctl list devices available | grep -E "iPhone" || true
+          echo "=== xcodebuild -showdestinations ==="
+          xcodebuild -showdestinations -project Similitude.xcodeproj -scheme "$SCHEME" 2>&1 | tee destinations.txt || true
+
+          # Prefer a destination xcodebuild itself declares eligible.
+          DEST_ID=$(grep "platform:iOS Simulator" destinations.txt | grep -v "error:" \
+            | grep -oE "id:[0-9A-Fa-f-]+" | head -1 | cut -d: -f2)
+          # Fall back to the first available iPhone simulator from simctl.
+          if [ -z "$DEST_ID" ]; then
+            DEST_ID=$(xcrun simctl list devices available | grep -E "iPhone" | head -1 \
+              | grep -oE "[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{27}")
+          fi
           if [ -z "$DEST_ID" ]; then
             echo "No eligible iOS Simulator destination found"; exit 1
           fi
