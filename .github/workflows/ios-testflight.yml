@@ -100,19 +100,30 @@ jobs:
     environment: testflight
     env:
       DIST_CERT_PRESENT: ${{ secrets.DIST_CERT_P12_BASE64 != '' }}
+      ASC_CONFIGURED: ${{ secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.ASC_KEY_P8 != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
+      - name: Check signing configuration
+        if: ${{ env.ASC_CONFIGURED != 'true' }}
+        run: |
+          echo "::notice::TestFlight upload skipped — App Store Connect secrets (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID) are not configured."
+
       - uses: actions/checkout@v4
+        if: ${{ env.ASC_CONFIGURED == 'true' }}
 
       - name: Show Xcode version
+        if: ${{ env.ASC_CONFIGURED == 'true' }}
         run: xcodebuild -version
 
       - name: Install XcodeGen
+        if: ${{ env.ASC_CONFIGURED == 'true' }}
         run: brew install xcodegen
 
       - name: Generate Xcode project
+        if: ${{ env.ASC_CONFIGURED == 'true' }}
         run: xcodegen generate
 
       - name: Write App Store Connect API key
+        if: ${{ env.ASC_CONFIGURED == 'true' }}
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
@@ -120,7 +131,7 @@ jobs:
           printf '%s' "$ASC_KEY_P8" > ~/asc/AuthKey.p8
 
       - name: Import distribution certificate (optional)
-        if: ${{ env.DIST_CERT_PRESENT == 'true' }}
+        if: ${{ env.ASC_CONFIGURED == 'true' && env.DIST_CERT_PRESENT == 'true' }}
         env:
           DIST_CERT_P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
           DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
@@ -134,6 +145,7 @@ jobs:
           rm cert.p12
 
       - name: Archive
+        if: ${{ env.ASC_CONFIGURED == 'true' }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -153,6 +165,7 @@ jobs:
             | tee archive.log | xcbeautify --renderer github-actions || (tail -100 archive.log; exit 1)
 
       - name: Export & upload to TestFlight
+        if: ${{ env.ASC_CONFIGURED == 'true' }}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -180,7 +193,7 @@ jobs:
             | tee export.log | xcbeautify --renderer github-actions || (tail -100 export.log; exit 1)
 
       - name: Preserve archive logs
-        if: always()
+        if: ${{ always() && env.ASC_CONFIGURED == 'true' }}
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
