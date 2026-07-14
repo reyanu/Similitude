@@ -13,7 +13,6 @@ The exported Core ML model is image-in / image-out:
   output "cartoon": RGB, 256x256, pixels 0-255
 """
 import argparse
-import sys
 
 
 def main() -> int:
@@ -23,11 +22,20 @@ def main() -> int:
     parser.add_argument("--repo", default="photo2cartoon_repo")
     args = parser.parse_args()
 
-    sys.path.insert(0, args.repo)
-
     import torch
     import coremltools as ct
-    from models import ResnetGenerator  # from the photo2cartoon repo
+
+    # Load models/networks.py directly by path: importing the repo's
+    # `models` package pulls the trainer and its heavy preprocessing deps
+    # (cv2, face-alignment, tensorflow) that conversion doesn't need.
+    import importlib.util
+    import os
+
+    networks_path = os.path.join(args.repo, "models", "networks.py")
+    spec = importlib.util.spec_from_file_location("p2c_networks", networks_path)
+    networks = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(networks)
+    ResnetGenerator = networks.ResnetGenerator
 
     net = ResnetGenerator(ngf=32, img_size=256, light=True)
     params = torch.load(args.weights, map_location="cpu", weights_only=True)
