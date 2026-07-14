@@ -31,14 +31,27 @@ def load_torch_model(src: str):
     # Batch dim is often 0/unknown in exports; force 1.
     dims = [1, dims[1], dims[2] if dims[2] > 0 else 256, dims[3] if dims[3] > 0 else 256]
 
-    # Pin static dims in the graph, then run shape inference — onnx2torch
-    # needs per-node shapes (e.g. AveragePool spatial rank) to pick
-    # converters, and many exports ship without value_info.
+    # Pin static dims in the graph, then simplify. onnx2torch needs
+    # per-node shapes (e.g. AveragePool spatial rank) to pick converters;
+    # UGATIT exports compute shapes dynamically (Shape→Gather→Reshape), so
+    # plain shape inference cannot resolve them — onnxsim constant-folds
+    # the graph into a fully static one.
     for dim, value in zip(shape.dim, dims):
         dim.ClearField("dim_param")
         dim.dim_value = value
-    onnx_model = onnx.shape_inference.infer_shapes(onnx_model)
 
+    try:
+        from onnxsim import simplify
+
+        onnx_model, ok = simplify(
+            onnx_model,
+            overwrite_input_shapes={graph_input.name: dims},
+        )
+        print(f"onnxsim: {'simplified' if ok else 'simplified (check failed, using result anyway)'}")
+    except ImportError:
+        print("onnxsim not installed; attempting conversion without simplification")
+
+    onnx_model = onnx.shape_inference.infer_shapes(onnx_model)
     return convert(onnx_model).eval(), dims
 
 

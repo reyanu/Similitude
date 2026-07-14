@@ -44,12 +44,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python virtual environment
-        # The runner's Homebrew Python is externally managed (PEP 668);
-        # a venv on PATH lets every later step pip install freely.
-        run: |
-          python3 -m venv "$RUNNER_TEMP/venv"
-          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: Set up Python
+        # Pinned interpreter so torch/coremltools versions are the tested
+        # combination (the Homebrew python is 3.14 and pulls untested torch).
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Download source model
         run: |
@@ -73,7 +73,7 @@ jobs:
       - name: Convert ONNX to Core ML (onnx only)
         if: ${{ inputs.model_format == 'onnx' }}
         run: |
-          pip install --quiet coremltools onnx torch onnx2torch
+          pip install --quiet coremltools "torch==2.7.*" onnx onnxsim onnxruntime onnx2torch
           python3 scripts/convert_onnx_to_coreml.py work/source_model "work/${MODEL_NAME}.mlpackage"
 
       - name: Prepare model for compilation
