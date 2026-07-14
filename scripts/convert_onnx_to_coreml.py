@@ -41,15 +41,12 @@ def load_torch_model(src: str):
         dim.dim_value = value
 
     try:
-        from onnxsim import simplify
+        from onnxslim import slim
 
-        onnx_model, ok = simplify(
-            onnx_model,
-            overwrite_input_shapes={graph_input.name: dims},
-        )
-        print(f"onnxsim: {'simplified' if ok else 'simplified (check failed, using result anyway)'}")
+        onnx_model = slim(onnx_model)
+        print("onnxslim: graph simplified")
     except ImportError:
-        print("onnxsim not installed; attempting conversion without simplification")
+        print("onnxslim not installed; attempting conversion without simplification")
 
     onnx_model = onnx.shape_inference.infer_shapes(onnx_model)
     return convert(onnx_model).eval(), dims
