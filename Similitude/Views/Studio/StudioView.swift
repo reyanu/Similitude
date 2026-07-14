@@ -71,7 +71,15 @@ final class StudioViewModel {
     /// resets download or generation state.
     let avatar = AvatarGenerationCoordinator()
 
+    // Monetization
+    let entitlements = EntitlementsService.shared
+    var showPaywall = false
+    var exportMessage: String?
+    var isExporting = false
+
     private let detector = FaceDetectionService()
+    private let exportLimits = ExportLimitService()
+    private let exporter = ExportService()
 
     func setPhoto(_ image: UIImage, source: ImageSource) {
         Task { @MainActor in
@@ -85,6 +93,34 @@ final class StudioViewModel {
             } catch {
                 sourceImage = nil
                 statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Exports an image under the current plan's rules. Free exports are
+    /// downscaled, watermarked, counted against the rolling weekly budget,
+    /// and blocked with the upgrade screen when the budget is spent.
+    func export(_ image: UIImage) {
+        exportMessage = nil
+        guard exportLimits.canExport(isPremium: entitlements.isPremium) else {
+            showPaywall = true
+            return
+        }
+        isExporting = true
+        Task { @MainActor in
+            defer { isExporting = false }
+            do {
+                let prepared = exporter.prepareForExport(image, isPremium: entitlements.isPremium)
+                try await exporter.saveToPhotoLibrary(prepared)
+                if entitlements.isPremium {
+                    exportMessage = "Saved to Photos."
+                } else {
+                    exportLimits.recordExport()
+                    let remaining = exportLimits.remainingFreeExports()
+                    exportMessage = "Saved to Photos. \(remaining) free export\(remaining == 1 ? "" : "s") left this week."
+                }
+            } catch {
+                exportMessage = error.localizedDescription
             }
         }
     }
@@ -115,18 +151,46 @@ final class StudioViewModel {
 }
 
 private struct StudioResultSheet: View {
-    let model: StudioViewModel
+    @Bindable var model: StudioViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            VStack {
+            VStack(spacing: 10) {
                 if let result = model.resultImage {
                     Image(uiImage: result)
                         .resizable()
                         .scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: Brand.cardCornerRadius))
-                        .padding()
+                        .padding(.horizontal)
+
+                    if let message = model.exportMessage {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    Button {
+                        model.export(result)
+                    } label: {
+                        if model.isExporting {
+                            ProgressView().frame(maxWidth: .infinity)
+                        } else {
+                            Label("Save to Photos", systemImage: "square.and.arrow.down")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(model.isExporting)
+                    .padding(.horizontal)
+
+                    if !model.entitlements.isPremium {
+                        Text("Free exports are 720p with a Similitude watermark.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 Spacer()
             }
@@ -136,6 +200,9 @@ private struct StudioResultSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $model.showPaywall) {
+                PremiumUpgradeView()
             }
         }
     }

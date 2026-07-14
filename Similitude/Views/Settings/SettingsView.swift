@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @State private var entitlements = EntitlementsService.shared
+    @State private var showPaywall = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -22,11 +25,16 @@ struct SettingsView: View {
                     HStack {
                         Text("Current plan")
                         Spacer()
-                        PlanBadge(kind: .free)
+                        PlanBadge(kind: entitlements.isPremium ? .premium : .free)
                     }
-                    Text("Premium — AI Cartoon Portrait, unlimited family members, high-resolution exports, and keepsake templates — arrives in an upcoming update.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    if !entitlements.isPremium {
+                        Button("Upgrade to Premium") {
+                            showPaywall = true
+                        }
+                        Text("Free plan: three watermarked 720p exports per week, basic resemblance comparison.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("About") {
@@ -49,10 +57,17 @@ struct SettingsView: View {
                     NavigationLink("AI Model Diagnostics") {
                         AvatarDiagnosticsView()
                     }
+                    Toggle("Premium override (DEBUG)", isOn: Binding(
+                        get: { entitlements.debugPremiumOverride },
+                        set: { entitlements.debugPremiumOverride = $0 }
+                    ))
                 }
                 #endif
             }
             .navigationTitle("Profile")
+            .sheet(isPresented: $showPaywall) {
+                PremiumUpgradeView()
+            }
         }
     }
 }

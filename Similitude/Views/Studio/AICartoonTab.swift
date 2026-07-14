@@ -49,8 +49,11 @@ struct AICartoonTab: View {
             set: { if !$0 { model.avatar.clearResult() } }
         )) {
             if let result = model.avatar.lastResult {
-                AvatarResultSheet(image: result)
+                AvatarResultSheet(image: result, model: model)
             }
+        }
+        .sheet(isPresented: $model.showPaywall) {
+            PremiumUpgradeView()
         }
     }
 
@@ -87,6 +90,10 @@ struct AICartoonTab: View {
 
         case .installed:
             Button {
+                guard model.entitlements.isPremium else {
+                    model.showPaywall = true
+                    return
+                }
                 if let image = model.sourceImage {
                     model.avatar.generate(from: image)
                 }
@@ -126,16 +133,40 @@ struct AICartoonTab: View {
 
 private struct AvatarResultSheet: View {
     let image: UIImage
+    @Bindable var model: StudioViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            VStack {
+            VStack(spacing: 10) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: Brand.cardCornerRadius))
-                    .padding()
+                    .padding(.horizontal)
+
+                if let message = model.exportMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button {
+                    model.export(image)
+                } label: {
+                    if model.isExporting {
+                        ProgressView().frame(maxWidth: .infinity)
+                    } else {
+                        Label("Save to Photos", systemImage: "square.and.arrow.down")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(model.isExporting)
+                .padding(.horizontal)
+
                 Spacer()
             }
             .navigationTitle("AI Cartoon Portrait")

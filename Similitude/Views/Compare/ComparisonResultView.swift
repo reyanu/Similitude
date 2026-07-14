@@ -5,8 +5,13 @@ import SwiftUI
 struct ComparisonResultView: View {
     let comparison: FamilyComparison
     @Environment(\.dismiss) private var dismiss
+    @State private var entitlements = EntitlementsService.shared
+    @State private var showPaywall = false
 
     private let explainer = TraitExplanationService()
+
+    /// Free plan shows the overall score plus this many traits per parent.
+    private static let freeTraitCount = 3
 
     var body: some View {
         NavigationStack {
@@ -48,8 +53,28 @@ struct ComparisonResultView: View {
                             Text("Feature by feature")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                            ForEach(parent.result.traits) { trait in
+
+                            let visibleTraits = entitlements.isPremium
+                                ? parent.result.traits
+                                : Array(parent.result.traits.prefix(Self.freeTraitCount))
+                            ForEach(visibleTraits) { trait in
                                 TraitRow(trait: trait)
+                            }
+
+                            if !entitlements.isPremium,
+                               parent.result.traits.count > Self.freeTraitCount {
+                                Button {
+                                    showPaywall = true
+                                } label: {
+                                    Label(
+                                        "Unlock all \(parent.result.traits.count) trait comparisons with Premium",
+                                        systemImage: "lock.fill"
+                                    )
+                                    .font(.subheadline)
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(Brand.premiumGold)
                             }
                         }
                         .padding()
@@ -71,6 +96,9 @@ struct ComparisonResultView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showPaywall) {
+                PremiumUpgradeView()
             }
         }
     }
