@@ -30,3 +30,6 @@ SimilitudeCartoonizationModel.zip
 # CI artifacts
 fastlane/report.xml
 fastlane/test_output
+
+# Word temp/lock files
+~$*.docx

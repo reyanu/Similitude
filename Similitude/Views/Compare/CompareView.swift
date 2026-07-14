@@ -1,8 +1,8 @@
 import SwiftUI
+import Vision
 
-/// Phase 1 scope: full photo intake and face validation for Child, Mom, and
-/// Dad through the shared pipeline. Resemblance scoring ships in Phase 2 and
-/// is honestly labeled as coming soon until then.
+/// Compare: photo intake for Child, Mom, and Dad through the shared
+/// pipeline, then explainable geometry-based resemblance results.
 struct CompareView: View {
     @State private var model = CompareViewModel()
 
@@ -19,18 +19,20 @@ struct CompareView: View {
 
                     VStack(spacing: 8) {
                         Button {
-                            // Enabled in Phase 2 when scoring lands.
+                            model.compare()
                         } label: {
                             Text("Compare Faces")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
-                        .disabled(true)
+                        .disabled(!model.canCompare)
 
-                        Text("Resemblance scoring is coming soon.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        if !model.canCompare {
+                            Text("Add the child and at least one parent to compare.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Text(Brand.entertainmentDisclaimer)
@@ -43,6 +45,11 @@ struct CompareView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Compare")
+            .sheet(isPresented: $model.showResults) {
+                if let comparison = model.comparison {
+                    ComparisonResultView(comparison: comparison)
+                }
+            }
         }
     }
 }
@@ -55,16 +62,41 @@ enum FamilyRole: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// The full outcome of one comparison: child vs each provided parent.
+struct FamilyComparison {
+    struct ParentOutcome: Identifiable {
+        let role: FamilyRole
+        let image: UIImage
+        let result: ResemblanceResult
+
+        var id: String { role.id }
+    }
+
+    let childImage: UIImage
+    let parents: [ParentOutcome]
+}
+
 @Observable
 final class CompareViewModel {
     struct Slot {
-        var image: UIImage?
+        var face: DetectedFace?
         var status: String?
+
+        var image: UIImage? { face?.normalizedImage }
     }
 
     var slots: [FamilyRole: Slot] = [:]
+    var comparison: FamilyComparison?
+    var showResults = false
 
     private let detector = FaceDetectionService()
+    private let geometry = FaceGeometryService()
+    private let scorer = ResemblanceScoringService()
+
+    var canCompare: Bool {
+        slots[.child]?.face != nil &&
+        (slots[.mom]?.face != nil || slots[.dad]?.face != nil)
+    }
 
     func setPhoto(_ image: UIImage, source: ImageSource, for role: FamilyRole) {
         Task { @MainActor in
@@ -72,11 +104,39 @@ final class CompareViewModel {
                 let face = try await Task.detached(priority: .userInitiated) { [detector] in
                     try detector.detectFace(in: image, source: source)
                 }.value
-                slots[role] = Slot(image: face.normalizedImage, status: "Face detected ✓")
+                slots[role] = Slot(face: face, status: "Face detected ✓")
             } catch {
-                slots[role] = Slot(image: nil, status: error.localizedDescription)
+                slots[role] = Slot(face: nil, status: error.localizedDescription)
             }
         }
+    }
+
+    func compare() {
+        guard let child = slots[.child]?.face,
+              let childMetrics = metrics(for: child) else { return }
+
+        var parents: [FamilyComparison.ParentOutcome] = []
+        for role in [FamilyRole.mom, .dad] {
+            guard let parent = slots[role]?.face,
+                  let parentMetrics = metrics(for: parent) else { continue }
+            parents.append(FamilyComparison.ParentOutcome(
+                role: role,
+                image: parent.normalizedImage,
+                result: scorer.compare(childMetrics, parentMetrics)
+            ))
+        }
+
+        guard !parents.isEmpty else { return }
+        comparison = FamilyComparison(childImage: child.normalizedImage, parents: parents)
+        showResults = true
+    }
+
+    private func metrics(for face: DetectedFace) -> FaceMetrics? {
+        let size = face.normalizedImage.size
+        guard let points = FaceLandmarkPoints.from(face.observation, imageSize: size) else {
+            return nil
+        }
+        return geometry.metrics(from: points)
     }
 }
 
