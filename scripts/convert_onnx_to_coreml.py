@@ -24,11 +24,21 @@ def load_torch_model(src: str):
 
     onnx_model = onnx.load(src)
     graph_input = onnx_model.graph.input[0]
-    dims = [d.dim_value for d in graph_input.type.tensor_type.shape.dim]
+    shape = graph_input.type.tensor_type.shape
+    dims = [d.dim_value for d in shape.dim]
     if len(dims) != 4:
         raise SystemExit(f"Expected a 4-D NCHW input, got dims={dims}")
     # Batch dim is often 0/unknown in exports; force 1.
     dims = [1, dims[1], dims[2] if dims[2] > 0 else 256, dims[3] if dims[3] > 0 else 256]
+
+    # Pin static dims in the graph, then run shape inference — onnx2torch
+    # needs per-node shapes (e.g. AveragePool spatial rank) to pick
+    # converters, and many exports ship without value_info.
+    for dim, value in zip(shape.dim, dims):
+        dim.ClearField("dim_param")
+        dim.dim_value = value
+    onnx_model = onnx.shape_inference.infer_shapes(onnx_model)
+
     return convert(onnx_model).eval(), dims
 
 
