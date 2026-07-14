@@ -64,7 +64,7 @@ jobs:
               DRIVE_ID=$(echo "$URL" | sed -nE 's#.*[?&]id=([^&]+).*#\1#p')
             fi
             [ -n "$DRIVE_ID" ] || { echo "Could not extract Drive id from $URL"; exit 1; }
-            if echo "$URL" | grep -qE "folders/|open\?id="; then
+            if echo "$URL" | grep -q "folders/"; then
               # Folder link: fetch everything, then pick the needed file.
               gdown --folder -O work/drive "$DRIVE_ID"
               if [ "${{ inputs.model_format }}" = "pt-photo2cartoon" ]; then
@@ -93,9 +93,17 @@ jobs:
       - name: Convert photo2cartoon PyTorch weights to Core ML (pt only)
         if: ${{ inputs.model_format == 'pt-photo2cartoon' }}
         run: |
+          # The official distribution is photo2cartoon_resources_*.zip with
+          # the weights inside; accept either the zip or a bare .pt file.
+          WEIGHTS=work/source_model
+          if file work/source_model | grep -qi "zip archive"; then
+            unzip -q work/source_model -d work/resources
+            WEIGHTS=$(find work/resources -name "photo2cartoon_weights.pt" | head -1)
+            [ -n "$WEIGHTS" ] || { echo "photo2cartoon_weights.pt not found in archive"; find work/resources; exit 1; }
+          fi
           git clone --depth 1 https://github.com/minivision-ai/photo2cartoon photo2cartoon_repo
           pip install --quiet coremltools "torch==2.7.0" numpy pillow
-          python3 -u scripts/convert_photo2cartoon_pt.py work/source_model "work/${MODEL_NAME}.mlpackage" --repo photo2cartoon_repo
+          python3 -u scripts/convert_photo2cartoon_pt.py "$WEIGHTS" "work/${MODEL_NAME}.mlpackage" --repo photo2cartoon_repo
 
       - name: Prepare model for compilation
         run: |
