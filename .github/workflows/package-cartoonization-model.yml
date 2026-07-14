@@ -73,8 +73,10 @@ jobs:
       - name: Convert ONNX to Core ML (onnx only)
         if: ${{ inputs.model_format == 'onnx' }}
         run: |
-          pip install --quiet coremltools "torch==2.7.*" onnx onnxsim onnxruntime onnx2torch
-          python3 scripts/convert_onnx_to_coreml.py work/source_model "work/${MODEL_NAME}.mlpackage"
+          # Known-good version set: onnxsim ships prebuilt binaries compiled
+          # against older onnx protobufs; newest onnx segfaults it.
+          pip install --quiet coremltools "torch==2.7.0" "onnx==1.16.1" "onnxsim==0.4.36" "onnxruntime==1.18.1" onnx2torch
+          python3 -u scripts/convert_onnx_to_coreml.py work/source_model "work/${MODEL_NAME}.mlpackage"
 
       - name: Prepare model for compilation
         run: |
