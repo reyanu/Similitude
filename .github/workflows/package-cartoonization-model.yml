@@ -102,7 +102,9 @@ jobs:
             [ -n "$WEIGHTS" ] || { echo "photo2cartoon_weights.pt not found in archive"; find work/resources; exit 1; }
           fi
           git clone --depth 1 https://github.com/minivision-ai/photo2cartoon photo2cartoon_repo
-          pip install --quiet coremltools "torch==2.7.0" numpy pillow
+          # torchvision: models/__init__.py in the repo imports the trainer,
+          # which needs it (0.22 is the torch 2.7-matched release).
+          pip install --quiet coremltools "torch==2.7.0" "torchvision==0.22.0" numpy pillow
           python3 -u scripts/convert_photo2cartoon_pt.py "$WEIGHTS" "work/${MODEL_NAME}.mlpackage" --repo photo2cartoon_repo
 
       - name: Prepare model for compilation
