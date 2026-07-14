@@ -57,8 +57,14 @@ jobs:
           URL="${{ inputs.model_url }}"
           if echo "$URL" | grep -q "drive.google.com"; then
             # photo2cartoon weights are distributed via Google Drive.
+            # Extract the bare file id — works across gdown versions.
             pip install --quiet gdown
-            gdown --fuzzy -O work/source_model "$URL"
+            FILE_ID=$(echo "$URL" | sed -nE 's#.*/file/d/([^/]+).*#\1#p')
+            if [ -z "$FILE_ID" ]; then
+              FILE_ID=$(echo "$URL" | sed -nE 's#.*[?&]id=([^&]+).*#\1#p')
+            fi
+            [ -n "$FILE_ID" ] || { echo "Could not extract Drive file id from $URL"; exit 1; }
+            gdown -O work/source_model "$FILE_ID"
           else
             curl -L --fail -o "work/source_model" "$URL"
           fi
