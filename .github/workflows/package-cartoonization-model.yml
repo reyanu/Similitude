@@ -20,7 +20,7 @@ on:
         description: "Format of the source model"
         required: true
         type: choice
-        options: [mlmodel, mlpackage, mlmodelc, onnx]
+        options: [mlmodel, mlpackage, mlmodelc, onnx, pt-photo2cartoon]
       version:
         description: "Model version (e.g. 1.0.0)"
         required: true
@@ -57,14 +57,26 @@ jobs:
           URL="${{ inputs.model_url }}"
           if echo "$URL" | grep -q "drive.google.com"; then
             # photo2cartoon weights are distributed via Google Drive.
-            # Extract the bare file id — works across gdown versions.
+            # Extract the bare id — works across gdown versions.
             pip install --quiet gdown
-            FILE_ID=$(echo "$URL" | sed -nE 's#.*/file/d/([^/]+).*#\1#p')
-            if [ -z "$FILE_ID" ]; then
-              FILE_ID=$(echo "$URL" | sed -nE 's#.*[?&]id=([^&]+).*#\1#p')
+            DRIVE_ID=$(echo "$URL" | sed -nE 's#.*/(file/d|folders)/([^/?]+).*#\2#p')
+            if [ -z "$DRIVE_ID" ]; then
+              DRIVE_ID=$(echo "$URL" | sed -nE 's#.*[?&]id=([^&]+).*#\1#p')
             fi
-            [ -n "$FILE_ID" ] || { echo "Could not extract Drive file id from $URL"; exit 1; }
-            gdown -O work/source_model "$FILE_ID"
+            [ -n "$DRIVE_ID" ] || { echo "Could not extract Drive id from $URL"; exit 1; }
+            if echo "$URL" | grep -qE "folders/|open\?id="; then
+              # Folder link: fetch everything, then pick the needed file.
+              gdown --folder -O work/drive "$DRIVE_ID"
+              if [ "${{ inputs.model_format }}" = "pt-photo2cartoon" ]; then
+                WANTED=$(find work/drive -name "photo2cartoon_weights.pt" | head -1)
+              else
+                WANTED=$(find work/drive -name "*.onnx" -o -name "*.mlmodel" | head -1)
+              fi
+              [ -n "$WANTED" ] || { echo "Expected model file not found in Drive folder"; find work/drive; exit 1; }
+              mv "$WANTED" work/source_model
+            else
+              gdown -O work/source_model "$DRIVE_ID"
+            fi
           else
             curl -L --fail -o "work/source_model" "$URL"
           fi
@@ -77,6 +89,13 @@ jobs:
           # this platform); torch pinned to the coremltools-tested release.
           pip install --quiet coremltools "torch==2.7.0" "onnx==1.16.1" onnxslim onnx2torch
           python3 -u scripts/convert_onnx_to_coreml.py work/source_model "work/${MODEL_NAME}.mlpackage"
+
+      - name: Convert photo2cartoon PyTorch weights to Core ML (pt only)
+        if: ${{ inputs.model_format == 'pt-photo2cartoon' }}
+        run: |
+          git clone --depth 1 https://github.com/minivision-ai/photo2cartoon photo2cartoon_repo
+          pip install --quiet coremltools "torch==2.7.0" numpy pillow
+          python3 -u scripts/convert_photo2cartoon_pt.py work/source_model "work/${MODEL_NAME}.mlpackage" --repo photo2cartoon_repo
 
       - name: Prepare model for compilation
         run: |
@@ -97,8 +116,8 @@ jobs:
               [ -n "$MLC" ] || { echo "No .mlmodelc found inside archive"; exit 1; }
               mv "$MLC" "${MODEL_NAME}.mlmodelc"
               ;;
-            onnx)
-              : # produced by the conversion step
+            onnx|pt-photo2cartoon)
+              : # produced by a conversion step
               ;;
           esac
           ls -lh
