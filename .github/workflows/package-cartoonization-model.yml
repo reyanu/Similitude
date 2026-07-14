@@ -44,13 +44,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python virtual environment
+        # The runner's Homebrew Python is externally managed (PEP 668);
+        # a venv on PATH lets every later step pip install freely.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
       - name: Download source model
         run: |
           mkdir -p work
           URL="${{ inputs.model_url }}"
           if echo "$URL" | grep -q "drive.google.com"; then
             # photo2cartoon weights are distributed via Google Drive.
-            pip3 install --quiet gdown
+            pip install --quiet gdown
             gdown --fuzzy -O work/source_model "$URL"
           else
             curl -L --fail -o "work/source_model" "$URL"
@@ -60,7 +67,6 @@ jobs:
       - name: Convert ONNX to Core ML (onnx only)
         if: ${{ inputs.model_format == 'onnx' }}
         run: |
-          python3 -m venv venv && source venv/bin/activate
           pip install --quiet coremltools onnx torch onnx2torch
           python3 scripts/convert_onnx_to_coreml.py work/source_model "work/${MODEL_NAME}.mlpackage"
 
