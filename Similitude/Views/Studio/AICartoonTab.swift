@@ -2,8 +2,8 @@ import SwiftUI
 
 /// AI Cartoon Portrait tab. Mirrors the Artistic Filters tile row exactly:
 /// three square tiles, center tile active and Premium, sides Coming Soon.
-/// Generation is gated on the on-device model being installed (Phase 3);
-/// until then the state is reported honestly, never faked with Core Image.
+/// Generation uses the installed Photo2Cartoon Core ML model only — there
+/// is no Core Image fallback masquerading as AI.
 struct AICartoonTab: View {
     @Bindable var model: StudioViewModel
 
@@ -42,21 +42,108 @@ struct AICartoonTab: View {
                 ) {}
             }
 
+            actionArea
+        }
+        .sheet(isPresented: Binding(
+            get: { model.avatar.lastResult != nil },
+            set: { if !$0 { model.avatar.clearResult() } }
+        )) {
+            if let result = model.avatar.lastResult {
+                AvatarResultSheet(image: result)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionArea: some View {
+        switch model.avatar.state {
+        case .notInstalled:
             VStack(spacing: 6) {
                 Button {
-                    // Wired to AvatarGenerationCoordinator in Phase 3.
+                    model.avatar.downloadAndInstall()
                 } label: {
-                    Text("Create AI Cartoon Portrait")
+                    Label("Download AI Model", systemImage: "arrow.down.circle.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(true)
 
-                Text("AI model is not installed. Download will be available in an upcoming update.")
+                Text("AI model is not installed. Download it once to create portraits on your device.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+            }
+
+        case .downloading(let progress):
+            VStack(spacing: 6) {
+                ProgressView(value: progress)
+                Text(progress > 0
+                     ? "Downloading model… \(Int(progress * 100))%"
+                     : "Preparing download…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 8)
+
+        case .installed:
+            Button {
+                if let image = model.sourceImage {
+                    model.avatar.generate(from: image)
+                }
+            } label: {
+                Text("Create AI Cartoon Portrait")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(model.sourceImage == nil)
+
+        case .generating:
+            VStack(spacing: 6) {
+                ProgressView()
+                Text("Creating your portrait on this device…")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 8)
+
+        case .failed(let message):
+            VStack(spacing: 6) {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                HStack(spacing: 12) {
+                    Button("Try Again") {
+                        model.avatar.acknowledgeFailure()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+}
+
+private struct AvatarResultSheet: View {
+    let image: UIImage
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: Brand.cardCornerRadius))
+                    .padding()
+                Spacer()
+            }
+            .navigationTitle("AI Cartoon Portrait")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
             }
         }
     }

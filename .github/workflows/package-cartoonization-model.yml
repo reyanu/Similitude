@@ -1,0 +1,144 @@
+name: Package Cartoonization Model
+
+# Packages an approved, licensed portrait-cartoonization model into
+# SimilitudeCartoonizationModel.zip + model-manifest.json and publishes both
+# as GitHub Release assets. Model weights are never committed to the repo.
+#
+# Usage: Actions → Package Cartoonization Model → Run workflow, providing a
+# direct URL to the licensed model file (.mlmodel, .mlpackage.zip, .mlmodelc.zip
+# or .onnx) and a version like 1.0.0. The release URL printed at the end is
+# what the app's manifest URL points to.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_url:
+        description: "Direct download URL of the licensed model (.mlmodel | .mlpackage.zip | .mlmodelc.zip | .onnx)"
+        required: true
+        type: string
+      model_format:
+        description: "Format of the source model"
+        required: true
+        type: choice
+        options: [mlmodel, mlpackage, mlmodelc, onnx]
+      version:
+        description: "Model version (e.g. 1.0.0)"
+        required: true
+        type: string
+      max_size_mb:
+        description: "Maximum allowed compiled model size in MB"
+        required: false
+        default: "200"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Convert, compile, package, release
+    runs-on: macos-15
+    env:
+      MODEL_NAME: Photo2Cartoon
+      ZIP_NAME: SimilitudeCartoonizationModel.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download source model
+        run: |
+          mkdir -p work
+          curl -L --fail -o "work/source_model" "${{ inputs.model_url }}"
+          ls -lh work/
+
+      - name: Convert ONNX to Core ML (onnx only)
+        if: ${{ inputs.model_format == 'onnx' }}
+        run: |
+          python3 -m venv venv && source venv/bin/activate
+          pip install --quiet coremltools onnx
+          python3 scripts/convert_onnx_to_coreml.py work/source_model "work/${MODEL_NAME}.mlpackage"
+
+      - name: Prepare model for compilation
+        run: |
+          cd work
+          case "${{ inputs.model_format }}" in
+            mlmodel)
+              mv source_model "${MODEL_NAME}.mlmodel"
+              ;;
+            mlpackage)
+              unzip -q source_model -d extracted
+              PKG=$(find extracted -name "*.mlpackage" -maxdepth 3 | head -1)
+              [ -n "$PKG" ] || { echo "No .mlpackage found inside archive"; exit 1; }
+              mv "$PKG" "${MODEL_NAME}.mlpackage"
+              ;;
+            mlmodelc)
+              unzip -q source_model -d extracted
+              MLC=$(find extracted -name "*.mlmodelc" -maxdepth 3 -type d | head -1)
+              [ -n "$MLC" ] || { echo "No .mlmodelc found inside archive"; exit 1; }
+              mv "$MLC" "${MODEL_NAME}.mlmodelc"
+              ;;
+            onnx)
+              : # produced by the conversion step
+              ;;
+          esac
+          ls -lh
+
+      - name: Compile to .mlmodelc
+        run: |
+          cd work
+          if [ ! -d "${MODEL_NAME}.mlmodelc" ]; then
+            SRC="${MODEL_NAME}.mlmodel"
+            [ -e "$SRC" ] || SRC="${MODEL_NAME}.mlpackage"
+            xcrun coremlcompiler compile "$SRC" .
+          fi
+          [ -d "${MODEL_NAME}.mlmodelc" ] || { echo "Compilation did not produce ${MODEL_NAME}.mlmodelc"; ls -R; exit 1; }
+
+      - name: Validate model size
+        run: |
+          cd work
+          SIZE_MB=$(( $(du -sk "${MODEL_NAME}.mlmodelc" | cut -f1) / 1024 ))
+          echo "Compiled model size: ${SIZE_MB} MB (limit ${{ inputs.max_size_mb }} MB)"
+          [ "$SIZE_MB" -le "${{ inputs.max_size_mb }}" ] || { echo "Model exceeds size limit"; exit 1; }
+
+      - name: Package zip and manifest
+        run: |
+          cd work
+          zip -qry "$ZIP_NAME" "${MODEL_NAME}.mlmodelc"
+          SHA256=$(shasum -a 256 "$ZIP_NAME" | cut -d' ' -f1)
+          SIZE_BYTES=$(stat -f%z "$ZIP_NAME")
+          python3 - "$SHA256" "$SIZE_BYTES" <<'EOF'
+          import json, sys, os
+          sha256, size = sys.argv[1], int(sys.argv[2])
+          expected = []
+          for root, _, files in os.walk("Photo2Cartoon.mlmodelc"):
+              for f in files:
+                  expected.append(os.path.join(root, f))
+          manifest = {
+              "version": os.environ.get("MODEL_VERSION", "0.0.0"),
+              "zip": "SimilitudeCartoonizationModel.zip",
+              "sha256": sha256,
+              "sizeBytes": size,
+              "modelDirectory": "Photo2Cartoon.mlmodelc",
+              "expectedFiles": sorted(expected),
+          }
+          with open("model-manifest.json", "w") as fh:
+              json.dump(manifest, fh, indent=2)
+          print(json.dumps(manifest, indent=2))
+          EOF
+          cat model-manifest.json
+        env:
+          MODEL_VERSION: ${{ inputs.version }}
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="model-v${{ inputs.version }}"
+          gh release create "$TAG" \
+            --title "Cartoonization model ${{ inputs.version }}" \
+            --notes "On-device portrait cartoonization model package. Installed by the app on demand; verify the license of the source model before distribution." \
+            "work/$ZIP_NAME" "work/model-manifest.json"
+          echo "### Model release published :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "Manifest URL for the app:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${{ github.repository }}/releases/download/$TAG/model-manifest.json" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

@@ -58,6 +58,7 @@ struct StudioView: View {
 /// Single source of truth for Studio state, shared by both tabs so repeated
 /// tab switching preserves the selected photo and results.
 @Observable
+@MainActor
 final class StudioViewModel {
     var sourceImage: UIImage?
     var statusMessage: String?
@@ -65,6 +66,10 @@ final class StudioViewModel {
     var resultImage: UIImage?
     var isProcessing = false
     var showResult = false
+
+    /// Owned here (not by the tab view) so repeated tab switching never
+    /// resets download or generation state.
+    let avatar = AvatarGenerationCoordinator()
 
     private let detector = FaceDetectionService()
 

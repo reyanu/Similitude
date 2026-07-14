@@ -46,6 +46,9 @@ struct SettingsView: View {
                     NavigationLink("Filter Diagnostics") {
                         FilterDiagnosticsView()
                     }
+                    NavigationLink("AI Model Diagnostics") {
+                        AvatarDiagnosticsView()
+                    }
                 }
                 #endif
             }

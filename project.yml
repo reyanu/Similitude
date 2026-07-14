@@ -11,12 +11,18 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: 0.9.19
 targets:
   Similitude:
     type: application
     platform: iOS
     sources:
       - path: Similitude
+    dependencies:
+      - package: ZIPFoundation
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rymoslite.similitude
@@ -41,6 +47,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.rymoslite.similitude.tests
     dependencies:
       - target: Similitude
+      - package: ZIPFoundation
 schemes:
   Similitude:
     build:

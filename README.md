@@ -61,7 +61,16 @@ Required repository secrets (environment `testflight`):
 
 ## Model packaging
 
-The Photo2Cartoon Core ML model is packaged by a separate workflow (`package-cartoonization-model.yml`, ships with Phase 3) into `SimilitudeCartoonizationModel.zip` plus a `model-manifest.json` with SHA256, published as a GitHub Release asset. Model weights are never committed to the repository.
+The Photo2Cartoon Core ML model is packaged by `package-cartoonization-model.yml` (manual dispatch) into `SimilitudeCartoonizationModel.zip` plus a `model-manifest.json` with SHA256, published as a GitHub Release asset tagged `model-vX.Y.Z`. Model weights are never committed to the repository.
+
+To publish a model:
+
+1. Obtain a **commercially licensed** Photo2Cartoon model (`.mlmodel`, zipped `.mlpackage`/`.mlmodelc`, or `.onnx`). Verify its license permits App Store distribution.
+2. Actions → *Package Cartoonization Model* → Run workflow with the model URL, format, and version.
+3. The workflow compiles, size-checks, zips, hashes, and creates the release. The run summary prints the manifest URL.
+4. The app's default manifest URL is `releases/latest/download/model-manifest.json`, so the newest `model-v*` release is picked up automatically. A different manifest URL can be tested via Profile → Developer → AI Model Diagnostics → override.
+
+In-app pipeline (`Similitude/Services/Avatar/`): manifest fetch → zip download with progress → streaming SHA256 verification → extraction (ZIPFoundation) → expected-file validation → atomic install into Application Support → `MLModel` load with Neural Engine → pixel-buffer inference. Every step is tracked on the diagnostics screen.
 
 ## Build phases
 
