@@ -65,8 +65,8 @@ The Photo2Cartoon Core ML model is packaged by `package-cartoonization-model.yml
 
 To publish a model:
 
-1. Obtain a **commercially licensed** Photo2Cartoon model (`.mlmodel`, zipped `.mlpackage`/`.mlmodelc`, or `.onnx`). Verify its license permits App Store distribution.
-2. Actions → *Package Cartoonization Model* → Run workflow with the model URL, format, and version.
+1. Obtain the Photo2Cartoon model (`.mlmodel`, zipped `.mlpackage`/`.mlmodelc`, or `.onnx`). The minivision-ai `photo2cartoon_weights.onnx` Google Drive link from the project README works directly — the workflow detects Drive URLs and fetches via `gdown`. Confirm the license permits App Store distribution before releasing.
+2. Actions → *Package Cartoonization Model* → Run workflow with the model URL, format (`onnx` for the photo2cartoon weights), and version. The ONNX path bridges through `onnx2torch` and bakes in photo2cartoon's `[-1, 1]` normalization, producing a plain image-in/image-out Core ML model, and smoke-tests one prediction before packaging.
 3. The workflow compiles, size-checks, zips, hashes, and creates the release. The run summary prints the manifest URL.
 4. The app's default manifest URL is `releases/latest/download/model-manifest.json`, so the newest `model-v*` release is picked up automatically. A different manifest URL can be tested via Profile → Developer → AI Model Diagnostics → override.
 

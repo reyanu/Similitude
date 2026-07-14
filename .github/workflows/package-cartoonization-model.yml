@@ -47,14 +47,21 @@ jobs:
       - name: Download source model
         run: |
           mkdir -p work
-          curl -L --fail -o "work/source_model" "${{ inputs.model_url }}"
+          URL="${{ inputs.model_url }}"
+          if echo "$URL" | grep -q "drive.google.com"; then
+            # photo2cartoon weights are distributed via Google Drive.
+            pip3 install --quiet gdown
+            gdown --fuzzy -O work/source_model "$URL"
+          else
+            curl -L --fail -o "work/source_model" "$URL"
+          fi
           ls -lh work/
 
       - name: Convert ONNX to Core ML (onnx only)
         if: ${{ inputs.model_format == 'onnx' }}
         run: |
           python3 -m venv venv && source venv/bin/activate
-          pip install --quiet coremltools onnx
+          pip install --quiet coremltools onnx torch onnx2torch
           python3 scripts/convert_onnx_to_coreml.py work/source_model "work/${MODEL_NAME}.mlpackage"
 
       - name: Prepare model for compilation
