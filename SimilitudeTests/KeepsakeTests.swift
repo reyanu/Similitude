@@ -123,12 +123,16 @@ final class KeepsakeTests: XCTestCase {
         let rounded = KeepsakeTemplateRenderer.maskImage(
             for: .roundedRect(cornerFraction: 0.1, featherFraction: 0.05), size: CGSize(width: 200, height: 200)
         )
+        // A useful mask is mostly visible (white) but never entirely white —
+        // hidden regions may be pure black (circle corners) or feathered gray
+        // (rounded rect border), so black ratio is only asserted for the circle.
         for mask in [try XCTUnwrap(circle), try XCTUnwrap(rounded)] {
             let stats = try XCTUnwrap(ImageStatistics.compute(for: mask))
-            // A useful mask has both visible (white) and hidden (black) regions.
             XCTAssertGreaterThan(stats.nearWhiteRatio, 0.2)
-            XCTAssertGreaterThan(stats.nearBlackRatio, 0.05)
+            XCTAssertLessThan(stats.nearWhiteRatio, 0.995)
         }
+        let circleStats = try XCTUnwrap(ImageStatistics.compute(for: try XCTUnwrap(circle)))
+        XCTAssertGreaterThan(circleStats.nearBlackRatio, 0.05, "Circle mask corners must be hidden")
     }
 
     func testFallbackArtworkIsNotBlank() throws {

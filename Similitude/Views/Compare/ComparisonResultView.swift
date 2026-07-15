@@ -7,6 +7,7 @@ struct ComparisonResultView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var entitlements = EntitlementsService.shared
     @State private var showPaywall = false
+    @State private var timelineMessage: String?
 
     private let explainer = TraitExplanationService()
 
@@ -82,6 +83,23 @@ struct ComparisonResultView: View {
                         .background(Brand.cardBackground, in: RoundedRectangle(cornerRadius: Brand.cardCornerRadius))
                     }
 
+                    VStack(spacing: 6) {
+                        Button {
+                            saveToTimeline()
+                        } label: {
+                            Label("Save to Timeline", systemImage: "calendar.badge.plus")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+
+                        if let timelineMessage {
+                            Text(timelineMessage)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     Text(Brand.entertainmentDisclaimer)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -100,6 +118,30 @@ struct ComparisonResultView: View {
             .sheet(isPresented: $showPaywall) {
                 PremiumUpgradeView()
             }
+        }
+    }
+
+    /// Captures this comparison as a timeline milestone: child portrait,
+    /// today's date, both parents' scores, and the strongest traits.
+    private func saveToTimeline() {
+        let mom = comparison.parents.first { $0.role == .mom }
+        let dad = comparison.parents.first { $0.role == .dad }
+        let traits = (mom ?? dad)?.result.strongestTraits.map(\.trait.displayName) ?? []
+        do {
+            try TimelineStore.shared.addEntry(
+                image: comparison.childImage,
+                date: Date(),
+                label: "Resemblance check",
+                momScorePercent: mom?.result.overallPercent,
+                dadScorePercent: dad?.result.overallPercent,
+                strongestTraits: traits,
+                isPremium: entitlements.isPremium
+            )
+            timelineMessage = "Saved to your Family Timeline."
+        } catch TimelineError.freeLimitReached {
+            showPaywall = true
+        } catch {
+            timelineMessage = error.localizedDescription
         }
     }
 }

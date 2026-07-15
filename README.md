@@ -76,9 +76,11 @@ In-app pipeline (`Similitude/Services/Avatar/`): manifest fetch → zip download
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| 1 | Navigation, Home, Studio tabs, shared camera/library pipeline, Vision detection, artistic filters | ✅ implemented |
-| 2 | Resemblance scoring, feature explanations, disclaimers | pending |
-| 3 | Photo2Cartoon packaging, download, checksum, diagnostics, inference | pending |
-| 4 | Free/Premium gating, watermark, export limits, subscription UI | pending |
-| 5 | Birthday / Graduation / Family Poster templates, layered renderer | pending |
-| 6 | Timeline, history, polish, TestFlight acceptance | pending |
+| 1 | Navigation, Home, Studio tabs, shared camera/library pipeline, Vision detection, artistic filters | ✅ |
+| 2 | Resemblance scoring, feature explanations, disclaimers | ✅ |
+| 3 | Photo2Cartoon packaging, download, checksum, diagnostics, inference | ✅ (model-v1.0.0 released) |
+| 4 | Free/Premium gating, watermark, export limits, subscription UI | ✅ |
+| 5 | Birthday / Graduation / Family Poster templates, layered renderer | ✅ (placeholder artwork) |
+| 6 | Timeline, history, polish | ✅ |
+
+Remaining for release: App Store Connect app + subscription product (`com.rymoslite.similitude.premium`), TestFlight signing secrets, public hosting for the model files (repo is private), real template artwork and Studio preview images, and on-device acceptance testing.
