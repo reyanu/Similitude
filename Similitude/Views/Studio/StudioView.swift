@@ -153,6 +153,7 @@ final class StudioViewModel {
 private struct StudioResultSheet: View {
     @Bindable var model: StudioViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showKeepsakeStudio = false
 
     var body: some View {
         NavigationStack {
@@ -186,6 +187,16 @@ private struct StudioResultSheet: View {
                     .disabled(model.isExporting)
                     .padding(.horizontal)
 
+                    Button {
+                        showKeepsakeStudio = true
+                    } label: {
+                        Label("Create a Keepsake", systemImage: "gift")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .padding(.horizontal)
+
                     if !model.entitlements.isPremium {
                         Text("Free exports are 720p with a Similitude watermark.")
                             .font(.caption2)
@@ -203,6 +214,11 @@ private struct StudioResultSheet: View {
             }
             .sheet(isPresented: $model.showPaywall) {
                 PremiumUpgradeView()
+            }
+            .sheet(isPresented: $showKeepsakeStudio) {
+                if let result = model.resultImage {
+                    KeepsakeTemplatePickerView(initialPortrait: result)
+                }
             }
         }
     }

@@ -135,6 +135,7 @@ private struct AvatarResultSheet: View {
     let image: UIImage
     @Bindable var model: StudioViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showKeepsakeStudio = false
 
     var body: some View {
         NavigationStack {
@@ -167,6 +168,16 @@ private struct AvatarResultSheet: View {
                 .disabled(model.isExporting)
                 .padding(.horizontal)
 
+                Button {
+                    showKeepsakeStudio = true
+                } label: {
+                    Label("Create a Keepsake", systemImage: "gift")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .padding(.horizontal)
+
                 Spacer()
             }
             .navigationTitle("AI Cartoon Portrait")
@@ -175,6 +186,9 @@ private struct AvatarResultSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showKeepsakeStudio) {
+                KeepsakeTemplatePickerView(initialPortrait: image)
             }
         }
     }
