@@ -138,6 +138,9 @@ jobs:
 
       - name: Import distribution certificate (optional)
         if: ${{ env.ASC_CONFIGURED == 'true' && env.DIST_CERT_PRESENT == 'true' }}
+        # Non-fatal: cloud signing via the ASC API key can manage the
+        # certificate when the local p12 cannot be imported.
+        continue-on-error: true
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
