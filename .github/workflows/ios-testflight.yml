@@ -142,8 +142,8 @@ jobs:
           head -1 "${HOME}/private_keys/AuthKey_${ASC_KEY_ID}.p8" | grep -q "BEGIN PRIVATE KEY" \
             || { echo "::error::Decoded ASC_API_KEY_BASE64 is not a .p8 private key (got: $(head -c 40 "${HOME}/private_keys/AuthKey_${ASC_KEY_ID}.p8" | tr -d '\n')…) — the secret is likely truncated or wrongly encoded"; exit 1; }
           echo "Key file decoded OK ($(wc -c < "${HOME}/private_keys/AuthKey_${ASC_KEY_ID}.p8") bytes)"
-          xcrun altool --list-providers --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" \
-            || { echo "::error::Apple rejected the API key. Check ASC_KEY_ID matches the key the .p8 belongs to, ASC_ISSUER_ID is the Issuer ID from the same App Store Connect API page, and the key role is App Manager or Admin."; exit 1; }
+          # Note: Xcode 26 altool dropped --list-providers with API-key auth,
+          # so live credential verification happens at upload time.
 
       - name: Show Xcode version
         run: xcodebuild -version
