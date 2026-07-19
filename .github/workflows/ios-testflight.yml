@@ -91,129 +91,140 @@ jobs:
 
   testflight:
     name: Archive & Upload to TestFlight
-    # Runs only when dispatched with deploy=true.
+    # Runs only when dispatched with deploy=true. Manual signing throughout,
+    # mirroring the proven familylook-match pipeline: installed provisioning
+    # profile + p12 in a dedicated keychain, manual export, altool upload
+    # authenticated with the App Store Connect API key.
     if: ${{ inputs.deploy }}
     needs: build-and-test
     runs-on: macos-15
     environment: testflight
     env:
-      DIST_CERT_PRESENT: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
-      PROFILE_PRESENT: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 != '' }}
-      ASC_CONFIGURED: ${{ secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && (secrets.ASC_API_KEY_BASE64 != '' || secrets.ASC_KEY_P8 != '') && secrets.APPLE_TEAM_ID != '' }}
+      BUNDLE_ID: com.rymoslite.similitude
+      KEYCHAIN_NAME: app-signing.keychain-db
     steps:
-      - name: Check signing configuration
-        if: ${{ env.ASC_CONFIGURED != 'true' }}
-        run: |
-          echo "::notice::TestFlight upload skipped — required secrets missing. Need ASC_KEY_ID, ASC_ISSUER_ID, ASC_API_KEY_BASE64 (or ASC_KEY_P8), and APPLE_TEAM_ID."
-
       - uses: actions/checkout@v4
-        if: ${{ env.ASC_CONFIGURED == 'true' }}
+
+      - name: Validate required secrets
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          for name in BUILD_CERTIFICATE_BASE64 BUILD_PROVISION_PROFILE_BASE64 P12_PASSWORD KEYCHAIN_PASSWORD ASC_API_KEY_BASE64 ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub Actions secret: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       - name: Show Xcode version
-        if: ${{ env.ASC_CONFIGURED == 'true' }}
         run: xcodebuild -version
 
       - name: Install XcodeGen
-        if: ${{ env.ASC_CONFIGURED == 'true' }}
         run: brew install xcodegen
 
       - name: Generate Xcode project
-        if: ${{ env.ASC_CONFIGURED == 'true' }}
         run: xcodegen generate
 
-      - name: Write App Store Connect API key
-        if: ${{ env.ASC_CONFIGURED == 'true' }}
-        env:
-          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
-          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-        run: |
-          mkdir -p ~/asc
-          if [ -n "$ASC_API_KEY_BASE64" ]; then
-            echo "$ASC_API_KEY_BASE64" | base64 --decode > ~/asc/AuthKey.p8
-          else
-            printf '%s' "$ASC_KEY_P8" > ~/asc/AuthKey.p8
-          fi
-          head -1 ~/asc/AuthKey.p8 | grep -q "BEGIN PRIVATE KEY" \
-            || { echo "::error::Decoded API key does not look like a .p8 private key"; exit 1; }
-
-      - name: Import distribution certificate (optional)
-        if: ${{ env.ASC_CONFIGURED == 'true' && env.DIST_CERT_PRESENT == 'true' }}
-        # Non-fatal: cloud signing via the ASC API key can manage the
-        # certificate when the local p12 cannot be imported.
-        continue-on-error: true
+      - name: Install Apple signing assets
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
-          KEYCHAIN_PWD="${KEYCHAIN_PASSWORD:-ci-temp}"
-          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > cert.p12
-          security create-keychain -p "$KEYCHAIN_PWD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PWD" build.keychain
-          security import cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" build.keychain
-          rm cert.p12
+          set -euo pipefail
+          CERTIFICATE_PATH="${RUNNER_TEMP}/ios_distribution.p12"
+          PROFILE_PATH="${RUNNER_TEMP}/similitude.mobileprovision"
+          PROFILE_INSTALL_PATH="${HOME}/Library/MobileDevice/Provisioning Profiles"
+          KEYCHAIN_PATH="${RUNNER_TEMP}/${KEYCHAIN_NAME}"
+          PROFILE_PLIST="${RUNNER_TEMP}/profile.plist"
 
-      - name: Install provisioning profile (optional)
-        if: ${{ env.ASC_CONFIGURED == 'true' && env.PROFILE_PRESENT == 'true' }}
-        env:
-          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
-        run: |
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode \
-            > ~/Library/MobileDevice/Provisioning\ Profiles/similitude.mobileprovision
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" "$PROFILE_PLIST")
+          PROFILE_DISPLAY_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" "$PROFILE_PLIST")
+          PROFILE_TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print TeamIdentifier:0" "$PROFILE_PLIST")
+          PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c "Print Entitlements:application-identifier" "$PROFILE_PLIST")
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          mkdir -p "$PROFILE_INSTALL_PATH"
+          cp "$PROFILE_PATH" "${PROFILE_INSTALL_PATH}/${PROFILE_UUID}.mobileprovision"
+
+          echo "Installed provisioning profile:"
+          echo "  Name: ${PROFILE_DISPLAY_NAME}"
+          echo "  UUID: ${PROFILE_UUID}"
+          echo "  Team ID: ${PROFILE_TEAM_ID}"
+          echo "  App ID: ${PROFILE_APP_ID}"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          echo "PROFILE_NAME=${PROFILE_DISPLAY_NAME}" >> "$GITHUB_ENV"
+          echo "PROFILE_UUID=${PROFILE_UUID}" >> "$GITHUB_ENV"
 
       - name: Archive
-        if: ${{ env.ASC_CONFIGURED == 'true' }}
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
-          xcodebuild archive \
-            -project Similitude.xcodeproj \
-            -scheme "$SCHEME" \
-            -destination "generic/platform=iOS" \
-            -archivePath build/Similitude.xcarchive \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/asc/AuthKey.p8 \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            | tee archive.log | xcbeautify --renderer github-actions || (tail -100 archive.log; exit 1)
+          echo "Using TestFlight build number: ${GITHUB_RUN_NUMBER}"
+          xcodebuild archive             -project Similitude.xcodeproj             -scheme "$SCHEME"             -configuration Release             -destination "generic/platform=iOS"             -archivePath "${RUNNER_TEMP}/Similitude.xcarchive"             DEVELOPMENT_TEAM="$APPLE_TEAM_ID"             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"             CODE_SIGN_STYLE=Manual             CODE_SIGN_IDENTITY="Apple Distribution"             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID"             OTHER_CODE_SIGN_FLAGS="--keychain ${RUNNER_TEMP}/${KEYCHAIN_NAME}"             | tee archive.log | xcbeautify --renderer github-actions || (tail -100 archive.log; exit 1)
 
-      - name: Export & upload to TestFlight
-        if: ${{ env.ASC_CONFIGURED == 'true' }}
+      - name: Export IPA
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
-          cat > ExportOptions.plist <<EOF
+          cat > "${RUNNER_TEMP}/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
-            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${BUNDLE_ID}</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
           </dict>
           </plist>
-          EOF
-          xcodebuild -exportArchive \
-            -archivePath build/Similitude.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/asc/AuthKey.p8 \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            | tee export.log | xcbeautify --renderer github-actions || (tail -100 export.log; exit 1)
+          PLIST
+          xcodebuild -exportArchive             -archivePath "${RUNNER_TEMP}/Similitude.xcarchive"             -exportPath "${RUNNER_TEMP}/export"             -exportOptionsPlist "${RUNNER_TEMP}/ExportOptions.plist"             | tee export.log | xcbeautify --renderer github-actions || (tail -100 export.log; exit 1)
+
+      - name: Upload to TestFlight
+        env:
+          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/private_keys"
+          echo -n "$ASC_API_KEY_BASE64" | base64 --decode > "${HOME}/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          IPA_PATH="$(find "${RUNNER_TEMP}/export" -name '*.ipa' -maxdepth 1 | head -n 1)"
+          echo "Uploading ${IPA_PATH}"
+          xcrun altool --upload-app             --type ios             --file "$IPA_PATH"             --apiKey "$ASC_KEY_ID"             --apiIssuer "$ASC_ISSUER_ID"
 
       - name: Preserve archive logs
-        if: ${{ always() && env.ASC_CONFIGURED == 'true' }}
+        if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
