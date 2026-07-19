@@ -36,7 +36,17 @@ targets:
           Photos are processed privately on your device and never leave your phone.
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: >-
           Similitude saves your exported keepsakes and portraits to your photo library.
-        CODE_SIGN_STYLE: Automatic
+      # Signing is configured per-target (never via xcodebuild CLI overrides,
+      # which would wrongly apply to SPM package targets). CI unsigned builds
+      # pass CODE_SIGNING_ALLOWED=NO; TestFlight archives sign manually with
+      # the App Store profile.
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: Similitude App Store
   SimilitudeTests:
     type: bundle.unit-test
     platform: iOS

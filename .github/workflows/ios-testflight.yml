@@ -182,7 +182,19 @@ jobs:
         run: |
           set -o pipefail
           echo "Using TestFlight build number: ${GITHUB_RUN_NUMBER}"
-          xcodebuild archive             -project Similitude.xcodeproj             -scheme "$SCHEME"             -configuration Release             -destination "generic/platform=iOS"             -archivePath "${RUNNER_TEMP}/Similitude.xcarchive"             DEVELOPMENT_TEAM="$APPLE_TEAM_ID"             PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"             CODE_SIGN_STYLE=Manual             CODE_SIGN_IDENTITY="Apple Distribution"             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID"             OTHER_CODE_SIGN_FLAGS="--keychain ${RUNNER_TEMP}/${KEYCHAIN_NAME}"             | tee archive.log | xcbeautify --renderer github-actions || (tail -100 archive.log; exit 1)
+          # Signing style/identity/profile live in the app target's Release
+          # config (project.yml) so SPM package targets are never handed a
+          # provisioning profile.
+          xcodebuild archive \
+            -project Similitude.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "${RUNNER_TEMP}/Similitude.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+            OTHER_CODE_SIGN_FLAGS="--keychain ${RUNNER_TEMP}/${KEYCHAIN_NAME}" \
+            | tee archive.log | xcbeautify --renderer github-actions || (tail -100 archive.log; exit 1)
 
       - name: Export IPA
         env:
