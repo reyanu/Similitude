@@ -20,7 +20,9 @@ env:
 jobs:
   build-and-test:
     name: Build & Test (Simulator)
-    runs-on: macos-15
+    # macos-26: Apple requires the iOS 26 SDK for App Store uploads, so
+    # build/test against the same toolchain the archive uses.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
@@ -97,7 +99,7 @@ jobs:
     # authenticated with the App Store Connect API key.
     if: ${{ inputs.deploy }}
     needs: build-and-test
-    runs-on: macos-15
+    runs-on: macos-26
     environment: testflight
     env:
       BUNDLE_ID: com.rymoslite.similitude
