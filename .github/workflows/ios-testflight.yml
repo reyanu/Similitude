@@ -1,9 +1,9 @@
 name: iOS Build & TestFlight
 
+# Manual trigger only — macOS runner minutes on a private repo bill at 10x,
+# so builds run when requested (Actions → iOS Build & TestFlight → Run
+# workflow), not on every push.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
     inputs:
       deploy:
@@ -91,10 +91,8 @@ jobs:
 
   testflight:
     name: Archive & Upload to TestFlight
-    # Runs on main pushes and manual dispatch with deploy=true.
-    if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    # Runs only when dispatched with deploy=true.
+    if: ${{ inputs.deploy }}
     needs: build-and-test
     runs-on: macos-15
     environment: testflight
