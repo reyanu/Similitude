@@ -80,37 +80,66 @@ final class AvatarModelDownloadService: NSObject {
         diagnostics: inout AvatarDiagnostics,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
-        guard let manifestURL = AvatarModelConfiguration.manifestURL else {
-            diagnostics.fail(.manifestConfigured, error: AvatarModelError.notConfigured)
-            throw AvatarModelError.notConfigured
-        }
-        diagnostics.complete(.manifestConfigured)
-
-        // 1. Manifest
+        // Two sources: authenticated GitHub API (private repo during
+        // testing, token configured in diagnostics) or a plain public URL.
         let manifest: AvatarModelManifest
-        do {
-            let (data, response) = try await URLSession.shared.data(from: manifestURL)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                throw AvatarModelError.downloadFailed(
-                    "manifest HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)"
-                )
+        let zipRequest: URLRequest
+
+        if let token = AvatarModelConfiguration.githubToken {
+            guard let apiURL = AvatarModelConfiguration.githubAPILatestReleaseURL else {
+                diagnostics.fail(.manifestConfigured, error: AvatarModelError.notConfigured)
+                throw AvatarModelError.notConfigured
             }
-            manifest = try JSONDecoder().decode(AvatarModelManifest.self, from: data)
-            diagnostics.complete(.manifestFetched)
-        } catch let error as AvatarModelError {
-            diagnostics.fail(.manifestFetched, error: error)
-            throw error
-        } catch {
-            diagnostics.fail(.manifestFetched, error: error)
-            throw AvatarModelError.manifestInvalid
+            diagnostics.complete(.manifestConfigured)
+            do {
+                let release = try await fetchRelease(from: apiURL, token: token)
+                guard let manifestAssetURL = release.assetURL(named: "model-manifest.json") else {
+                    throw AvatarModelError.downloadFailed("release has no model-manifest.json asset")
+                }
+                let manifestData = try await fetchAsset(from: manifestAssetURL, token: token)
+                manifest = try JSONDecoder().decode(AvatarModelManifest.self, from: manifestData)
+                guard let zipAssetURL = release.assetURL(named: manifest.zip) else {
+                    throw AvatarModelError.downloadFailed("release has no \(manifest.zip) asset")
+                }
+                zipRequest = Self.request(for: zipAssetURL, token: token, octetStream: true)
+                diagnostics.complete(.manifestFetched)
+            } catch let error as AvatarModelError {
+                diagnostics.fail(.manifestFetched, error: error)
+                throw error
+            } catch {
+                diagnostics.fail(.manifestFetched, error: error)
+                throw AvatarModelError.manifestInvalid
+            }
+        } else {
+            guard let manifestURL = AvatarModelConfiguration.manifestURL else {
+                diagnostics.fail(.manifestConfigured, error: AvatarModelError.notConfigured)
+                throw AvatarModelError.notConfigured
+            }
+            diagnostics.complete(.manifestConfigured)
+            do {
+                let (data, response) = try await URLSession.shared.data(from: manifestURL)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    throw AvatarModelError.downloadFailed(
+                        "manifest HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)"
+                    )
+                }
+                manifest = try JSONDecoder().decode(AvatarModelManifest.self, from: data)
+                zipRequest = URLRequest(url: manifestURL.deletingLastPathComponent()
+                    .appendingPathComponent(manifest.zip))
+                diagnostics.complete(.manifestFetched)
+            } catch let error as AvatarModelError {
+                diagnostics.fail(.manifestFetched, error: error)
+                throw error
+            } catch {
+                diagnostics.fail(.manifestFetched, error: error)
+                throw AvatarModelError.manifestInvalid
+            }
         }
 
-        // 2. Zip download (resolved relative to the manifest URL)
-        let zipRemoteURL = manifestURL.deletingLastPathComponent()
-            .appendingPathComponent(manifest.zip)
+        // 2. Zip download
         let zipLocalURL: URL
         do {
-            zipLocalURL = try await download(from: zipRemoteURL, progress: progress)
+            zipLocalURL = try await download(request: zipRequest, progress: progress)
             diagnostics.complete(.zipDownloaded)
         } catch {
             diagnostics.fail(.zipDownloaded, error: error)
@@ -179,10 +208,46 @@ final class AvatarModelDownloadService: NSObject {
 
     // MARK: Helpers
 
+    /// Builds a GitHub API request; `octetStream` selects raw asset bytes.
+    static func request(for url: URL, token: String, octetStream: Bool) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue(
+            octetStream ? "application/octet-stream" : "application/vnd.github+json",
+            forHTTPHeaderField: "Accept"
+        )
+        return request
+    }
+
+    private func fetchRelease(from url: URL, token: String) async throws -> GitHubRelease {
+        let (data, response) = try await URLSession.shared.data(
+            for: Self.request(for: url, token: token, octetStream: false)
+        )
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw AvatarModelError.downloadFailed(
+                "release lookup HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1) — check the access token"
+            )
+        }
+        return try JSONDecoder().decode(GitHubRelease.self, from: data)
+    }
+
+    private func fetchAsset(from url: URL, token: String) async throws -> Data {
+        let (data, response) = try await URLSession.shared.data(
+            for: Self.request(for: url, token: token, octetStream: true)
+        )
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw AvatarModelError.downloadFailed(
+                "asset HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)"
+            )
+        }
+        return data
+    }
+
     /// Download with progress via the task's Progress object; the temp file
     /// is copied out before the completion handler returns.
     private func download(
-        from url: URL,
+        request: URLRequest,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> URL {
         let destination = fileManager.temporaryDirectory
@@ -192,7 +257,7 @@ final class AvatarModelDownloadService: NSObject {
         defer { observation?.invalidate() }
 
         return try await withCheckedThrowingContinuation { continuation in
-            let task = URLSession.shared.downloadTask(with: url) { tempURL, response, error in
+            let task = URLSession.shared.downloadTask(with: request) { tempURL, response, error in
                 if let error {
                     continuation.resume(throwing: error)
                     return

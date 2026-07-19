@@ -7,6 +7,8 @@ struct AvatarDiagnosticsView: View {
     @State private var coordinator = AvatarGenerationCoordinator()
     @State private var overrideURLText: String = UserDefaults.standard
         .string(forKey: AvatarModelConfiguration.overrideDefaultsKey) ?? ""
+    @State private var githubTokenText: String = UserDefaults.standard
+        .string(forKey: AvatarModelConfiguration.githubTokenKey) ?? ""
 
     var body: some View {
         List {
@@ -40,6 +42,22 @@ struct AvatarDiagnosticsView: View {
                             .multilineTextAlignment(.trailing)
                     }
                 }
+            }
+
+            Section {
+                SecureField("github_pat_…", text: $githubTokenText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Apply Token") {
+                    UserDefaults.standard.set(
+                        githubTokenText.isEmpty ? nil : githubTokenText,
+                        forKey: AvatarModelConfiguration.githubTokenKey
+                    )
+                }
+            } header: {
+                Text("GitHub access token (private repo testing)")
+            } footer: {
+                Text("Fine-grained token with read-only Contents access to \(AvatarModelConfiguration.githubRepository). Lets test builds download the model while the repo is private. Remove before any public release.")
             }
 
             Section("Manifest URL override") {

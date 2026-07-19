@@ -61,6 +61,38 @@ final class AvatarModelTests: XCTestCase {
         XCTAssertEqual(manifest.sizeBytes, 52_428_800)
     }
 
+    func testGitHubReleaseAssetSelection() throws {
+        let json = """
+        {
+          "tag_name": "model-v1.0.0",
+          "assets": [
+            {"name": "model-manifest.json", "url": "https://api.github.com/repos/x/y/releases/assets/1"},
+            {"name": "SimilitudeCartoonizationModel.zip", "url": "https://api.github.com/repos/x/y/releases/assets/2"}
+          ]
+        }
+        """
+        let release = try JSONDecoder().decode(GitHubRelease.self, from: Data(json.utf8))
+        XCTAssertEqual(
+            release.assetURL(named: "model-manifest.json")?.absoluteString,
+            "https://api.github.com/repos/x/y/releases/assets/1"
+        )
+        XCTAssertEqual(
+            release.assetURL(named: "SimilitudeCartoonizationModel.zip")?.absoluteString,
+            "https://api.github.com/repos/x/y/releases/assets/2"
+        )
+        XCTAssertNil(release.assetURL(named: "missing.bin"))
+    }
+
+    func testGitHubRequestCarriesAuthAndAccept() {
+        let url = URL(string: "https://api.github.com/repos/x/y/releases/latest")!
+        let jsonRequest = AvatarModelDownloadService.request(for: url, token: "t0ken", octetStream: false)
+        XCTAssertEqual(jsonRequest.value(forHTTPHeaderField: "Authorization"), "Bearer t0ken")
+        XCTAssertEqual(jsonRequest.value(forHTTPHeaderField: "Accept"), "application/vnd.github+json")
+
+        let binaryRequest = AvatarModelDownloadService.request(for: url, token: "t0ken", octetStream: true)
+        XCTAssertEqual(binaryRequest.value(forHTTPHeaderField: "Accept"), "application/octet-stream")
+    }
+
     // MARK: Expected-file validation
 
     private func makeManifest(expectedFiles: [String]) -> AvatarModelManifest {
