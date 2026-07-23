@@ -30,17 +30,16 @@ final class EntitlementsService {
 
     private var updatesTask: Task<Void, Never>?
 
-    #if DEBUG
-    /// Developer toggle so premium flows are testable before App Store
-    /// Connect products exist. DEBUG builds only.
-    var debugPremiumOverride: Bool {
+    /// Tester toggle so premium flows are verifiable without a purchase.
+    /// Honored only in DEBUG and TestFlight builds — App Store builds
+    /// ignore the stored value entirely.
+    var testingPremiumOverride: Bool {
         get { UserDefaults.standard.bool(forKey: "debug.premiumOverride") }
         set {
             UserDefaults.standard.set(newValue, forKey: "debug.premiumOverride")
             Task { await refreshEntitlement() }
         }
     }
-    #endif
 
     private init() {
         updatesTask = Task { [weak self] in
@@ -78,12 +77,11 @@ final class EntitlementsService {
     }
 
     func refreshEntitlement() async {
-        #if DEBUG
-        if UserDefaults.standard.bool(forKey: "debug.premiumOverride") {
+        if BuildEnvironment.isTestBuild,
+           UserDefaults.standard.bool(forKey: "debug.premiumOverride") {
             isPremium = true
             return
         }
-        #endif
 
         var premium = false
         for await entitlement in Transaction.currentEntitlements {

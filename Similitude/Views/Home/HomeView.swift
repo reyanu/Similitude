@@ -15,30 +15,30 @@ struct HomeView: View {
                         title: "Family Resemblance",
                         description: "Discover visible similarities between children, parents, and siblings.",
                         cta: "Compare Family Faces",
-                        systemImage: "person.2.fill"
+                        illustration: { AnyView(FamilyIllustration()) }
                     ) { selection = .compare }
                     ExperienceCard(
                         title: "Similitude Studio",
                         description: "Apply artistic styles or create a premium AI cartoon portrait privately on your device.",
                         cta: "Create a Portrait",
-                        systemImage: "paintbrush.pointed.fill"
+                        illustration: { AnyView(StudioIllustration()) }
                     ) { selection = .studio }
                     ExperienceCard(
                         title: "Family Timeline",
                         description: "See how resemblance changes across months, years, and milestones.",
                         cta: "Build Your Family Timeline",
-                        systemImage: "calendar"
+                        illustration: { AnyView(TimelineIllustration()) }
                     ) { selection = .timeline }
                     ExperienceCard(
                         title: "Keepsake Studio",
                         description: "Turn family portraits into birthday cards, graduation cards, and family posters. Start from any portrait you create in the Studio.",
                         cta: "Create a Keepsake",
-                        systemImage: "gift.fill"
+                        illustration: { AnyView(KeepsakeIllustration()) }
                     ) { selection = .studio }
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .brandBackground()
             .navigationTitle("Similitude")
         }
     }
@@ -48,7 +48,7 @@ private struct ExperienceCard: View {
     let title: String
     let description: String
     let cta: String
-    let systemImage: String
+    let illustration: () -> AnyView
     var action: () -> Void = {}
 
     var body: some View {
@@ -59,29 +59,32 @@ private struct ExperienceCard: View {
     }
 
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.title3)
-                    .foregroundStyle(Brand.accent)
-                    .frame(width: 34, height: 34)
-                    .background(Brand.accentSoft, in: RoundedRectangle(cornerRadius: 10))
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(title)
                     .font(.headline)
+                    .foregroundStyle(.white)
+
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(cta)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Brand.lightBlue)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(description)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(cta)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Brand.accent)
+            illustration()
+                .frame(width: 96, height: 86)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(Brand.cardBackground, in: RoundedRectangle(cornerRadius: Brand.cardCornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Brand.cardCornerRadius)
+                .strokeBorder(Brand.accent.opacity(0.35), lineWidth: 1)
+        )
         .accessibilityElement(children: .combine)
         .accessibilityHint(cta)
     }
@@ -89,4 +92,5 @@ private struct ExperienceCard: View {
 
 #Preview {
     HomeView(selection: .constant(.home))
+        .preferredColorScheme(.dark)
 }

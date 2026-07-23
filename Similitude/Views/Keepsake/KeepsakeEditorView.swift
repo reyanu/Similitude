@@ -233,7 +233,7 @@ struct KeepsakeEditorView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .brandBackground()
         .navigationTitle(model.template.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .task { model.schedulePreviewRender() }

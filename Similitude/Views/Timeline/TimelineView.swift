@@ -17,7 +17,7 @@ struct TimelineView: View {
                     entryList
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .brandBackground()
             .navigationTitle("Timeline")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -84,6 +84,7 @@ struct TimelineView: View {
                     }
                     .tint(Brand.premiumGold)
                 }
+                .listRowBackground(Brand.cardBackground)
             }
 
             Section {
@@ -100,7 +101,9 @@ struct TimelineView: View {
                 Text(Brand.entertainmentDisclaimer)
                     .font(.caption2)
             }
+            .listRowBackground(Brand.cardBackground)
         }
+        .brandListBackground()
     }
 }
 
@@ -204,7 +207,7 @@ private struct AddTimelineEntryView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .brandBackground()
             .navigationTitle("Add Milestone")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

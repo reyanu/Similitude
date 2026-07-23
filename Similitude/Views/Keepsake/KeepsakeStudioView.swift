@@ -33,7 +33,7 @@ struct KeepsakeTemplatePickerView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .brandBackground()
             .navigationTitle("Keepsake Studio")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

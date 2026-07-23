@@ -45,7 +45,7 @@ struct StudioView: View {
             }
             .padding(.horizontal)
             .padding(.top, 4)
-            .background(Color(.systemGroupedBackground))
+            .brandBackground()
             .navigationTitle("Similitude Studio")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $model.showResult) {

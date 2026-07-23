@@ -7,6 +7,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Group {
                 Section {
                     Label {
                         Text(Brand.privacyMessage)
@@ -49,21 +50,30 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                #if DEBUG
-                Section("Developer") {
-                    NavigationLink("Filter Diagnostics") {
-                        FilterDiagnosticsView()
+                if BuildEnvironment.isTestBuild {
+                    Section {
+                        NavigationLink("AI Model Diagnostics") {
+                            AvatarDiagnosticsView()
+                        }
+                        Toggle("Premium override (testing)", isOn: Binding(
+                            get: { entitlements.testingPremiumOverride },
+                            set: { entitlements.testingPremiumOverride = $0 }
+                        ))
+                        #if DEBUG
+                        NavigationLink("Filter Diagnostics") {
+                            FilterDiagnosticsView()
+                        }
+                        #endif
+                    } header: {
+                        Text("Testing")
+                    } footer: {
+                        Text("Visible only in TestFlight and development builds.")
                     }
-                    NavigationLink("AI Model Diagnostics") {
-                        AvatarDiagnosticsView()
-                    }
-                    Toggle("Premium override (DEBUG)", isOn: Binding(
-                        get: { entitlements.debugPremiumOverride },
-                        set: { entitlements.debugPremiumOverride = $0 }
-                    ))
                 }
-                #endif
+                }
+                .listRowBackground(Brand.cardBackground)
             }
+            .brandListBackground()
             .navigationTitle("Profile")
             .sheet(isPresented: $showPaywall) {
                 PremiumUpgradeView()
@@ -84,6 +94,7 @@ struct FilterDiagnosticsView: View {
             stage("Blended", PencilSketchFilter.lastIntermediates.blended)
             stage("Final", PencilSketchFilter.lastIntermediates.final)
         }
+        .brandListBackground()
         .navigationTitle("Pencil Sketch Stages")
     }
 

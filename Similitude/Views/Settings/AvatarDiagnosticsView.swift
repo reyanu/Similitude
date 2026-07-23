@@ -12,6 +12,7 @@ struct AvatarDiagnosticsView: View {
 
     var body: some View {
         List {
+            Group {
             Section("Pipeline") {
                 ForEach(AvatarDiagnostics.Step.allCases, id: \.rawValue) { step in
                     HStack {
@@ -82,7 +83,10 @@ struct AvatarDiagnosticsView: View {
                     coordinator.removeModel()
                 }
             }
+            }
+            .listRowBackground(Brand.cardBackground)
         }
+        .brandListBackground()
         .navigationTitle("AI Model Diagnostics")
     }
 

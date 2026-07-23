@@ -96,7 +96,7 @@ struct PremiumUpgradeView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .brandBackground()
             .navigationTitle("Premium")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

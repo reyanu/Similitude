@@ -43,7 +43,7 @@ struct CompareView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .brandBackground()
             .navigationTitle("Compare")
             .sheet(isPresented: $model.showResults) {
                 if let comparison = model.comparison {
